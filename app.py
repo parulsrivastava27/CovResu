@@ -57,6 +57,29 @@ def generate_cover_letter(user_data, job_description):
     """
     return query_ollama(prompt)
 
+def tailor_resume_summary(summary_text):
+    """
+    Uses Local LLM to rewrite the professional summary.
+    """
+    prompt = f"""
+    Act as an Expert Resume Writer.
+    Task: Rewrite the professional summary below to be more impactful and concise.
+    
+    Original Summary:
+    {summary_text}
+    
+    RULES:
+    1. Keep it under 3 sentences.
+    2. Focus on achievements and skills.
+    3. Do not add conversational filler like "Here is the summary, or end it with other additional tasks like let me know, etc".
+    4. Just give the exact summary.
+    """
+    
+    response_text = query_ollama(prompt)
+    return response_text.strip()
+    
+
+
 def tailor_resume_experience(experience_list, job_description):
     """
     Uses Local LLM to rewrite experience bullet points.
@@ -100,6 +123,48 @@ def tailor_resume_experience(experience_list, job_description):
         st.warning("Raw Model Output (for debugging):")
         st.code(response_text)
         return experience_list
+    
+def tailor_resume_projects(projects_list):
+    """
+    Uses Local LLM to rewrite project descriptions.
+    """
+    projects_str = json.dumps(projects_list)
+    
+    prompt = f"""
+    Act as an Expert Resume Writer.
+    Task: Rewrite the 'description' field of the projects JSON below to be more impactful and concise.
+    
+    Original Projects JSON:
+    {projects_str}
+    
+    RULES:
+    1. Output ONLY valid JSON.
+    2. Return a LIST of dictionaries.
+    3. Keep the exact same keys (title, tech), only change 'description'.
+    4. Do not add conversational filler like "Here is the JSON".
+    5. Ensure all quotes are escaped correctly.
+    """
+    
+    response_text = query_ollama(prompt)
+    
+    # IMPROVED JSON EXTRACTION
+    try:
+        
+        match = re.search(r'\[.*\]', response_text, re.DOTALL)
+        
+        if match:
+            json_str = match.group(0)
+            return json.loads(json_str)
+        else:
+            clean_text = response_text.replace('```json', '').replace('```', '').strip()
+            return json.loads(clean_text)
+            
+    except json.JSONDecodeError as e:
+        st.error(f"AI Error: The model returned invalid JSON. (Error: {str(e)})")
+        st.warning("Raw Model Output (for debugging):")
+        st.code(response_text)
+        return projects_list
+    
 
 # PDF GENERATION FUNCTIONS
 
@@ -201,10 +266,10 @@ def create_cover_letter_pdf(text, user_data):
 # MAIN
 
 def main():
-    st.set_page_config(page_title="Local AI Resume Builder", page_icon="🦙", layout="wide")
+    st.set_page_config(page_title="CovRes", page_icon="📄", layout="wide")
     
-    st.sidebar.title("🦙 Local AI Resume")
-    st.sidebar.markdown(f"Running Model: **{OLLAMA_MODEL}**")
+    st.title("📄CovRes - Resume and Cover Letter Generator")
+    st.markdown("Generate professional resumes and cover letters using AI.")
     
     # Initialize Session State
     if 'current_step' not in st.session_state:
@@ -212,43 +277,80 @@ def main():
         
     if 'user_data' not in st.session_state:
         st.session_state.user_data = {
-            'name': '', 'email': '', 'phone': '', 'current_role': '', 'summary': '',
-            'skills': [], 'experience': [], 'projects': [], 'education': [],
-            'job_description': '', 'tailored_experience': []
+            'name': '', 
+            'email': '', 
+            'phone': '', 
+            'current_role': '',
+            'years_of_experience': '',
+            'summary': '',
+            'skills': [], 
+            'experience': [], 
+            'projects': [], 
+            'education': [],
+            'certifications': [], 
+            'job_description': '', 
+            'tailored_experience': [], 
+            'tailored_projects': [],
+            'tailored_summary': ''
         }
+    with st.sidebar:
+        st.header("🛠 Navigation")
+        if st.button("Step 1: Personal Info", use_container_width=True):
+            st.session_state.current_step = 1
+        if st.button("Step 2: Skills & Experience", use_container_width=True):
+            st.session_state.current_step = 2
+        if st.button("Step 3: Projects & Certifications", use_container_width=True):
+            st.session_state.current_step = 3
+        if st.button("Step 4: Education & Job Description", use_container_width=True):
+            st.session_state.current_step = 4
+        if st.button("Step 5: Generate and Finalize", use_container_width=True):
+            st.session_state.current_step = 5
+
+        st.markdown("---")
+        st.markdown("**Current Step:** " + str(st.session_state.current_step))
+    
 
     # Step 1: Personal Info
     if st.session_state.current_step == 1:
         st.header("👤 Personal Information")
         c1, c2 = st.columns(2)
         with c1:
-            st.session_state.user_data['name'] = st.text_input("Name", st.session_state.user_data['name'])
-            st.session_state.user_data['email'] = st.text_input("Email", st.session_state.user_data['email'])
+            st.session_state.user_data['name'] = st.text_input("Full Name *", value = st.session_state.user_data['name'])
+            st.session_state.user_data['email'] = st.text_input("Email *", value = st.session_state.user_data['email'])
+            st.session_state.user_data['phone'] = st.text_input("Phone *", value = st.session_state.user_data['phone'])
+
         with c2:
-            st.session_state.user_data['phone'] = st.text_input("Phone", st.session_state.user_data['phone'])
-            st.session_state.user_data['current_role'] = st.text_input("Current Role", st.session_state.user_data['current_role'])
+            st.session_state.user_data['current_role'] = st.text_input("Current Role", value = st.session_state.user_data['current_role'])
+            st.session_state.user_data['years_of_experience'] = st.text_input("Years of Experience", value = st.session_state.user_data['years_of_experience'])
         
         st.session_state.user_data['summary'] = st.text_area("Professional Summary", st.session_state.user_data['summary'])
         
-        if st.button("Next: Skills & Experience ➡"): 
-            st.session_state.current_step = 2
-            st.rerun()
+        if st.button("Next: Skills & Experience", type="primary"):
+            if st.session_state.user_data['name'] and st.session_state.user_data['email'] and st.session_state.user_data['phone']:
+                st.session_state.current_step = 2
+                st.rerun()
+            else:
+                st.error("Please fill in all required fields (marked with *)")
             
     # Step 2: Skills & Experience
     elif st.session_state.current_step == 2:
         st.header("🛠 Skills & Experience")
         
-        skills_txt = st.text_area("Skills (comma sep)", ", ".join(st.session_state.user_data['skills']))
+        skills_txt = st.text_area("Skills * (comma separated)", ", ".join(st.session_state.user_data['skills']))
         st.session_state.user_data['skills'] = [s.strip() for s in skills_txt.split(',') if s.strip()]
         
         st.subheader("Work Experience")
         for i, exp in enumerate(st.session_state.user_data['experience']):
             with st.expander(f"Job {i+1}", expanded=True):
                 c1, c2 = st.columns(2)
-                exp['title'] = c1.text_input(f"Title {i}", exp['title'])
-                exp['company'] = c2.text_input(f"Company {i}", exp['company'])
-                exp['duration'] = c1.text_input(f"Duration {i}", exp['duration'])
-                exp['description'] = st.text_area(f"Description {i}", exp['description'])
+                exp['title'] = c1.text_input(f"Title {i+1}", exp['title'])
+                exp['company'] = c2.text_input(f"Company {i+1}", exp['company'])
+                exp['duration'] = c1.text_input(f"Duration {i+1}", exp['duration'])
+                exp['description'] = st.text_area(f"Description {i+1}", exp['description'])
+
+            if st.button(f"➖ Remove Experience {i+1}", key=f"remove_exp_{i}"):
+                    st.session_state.user_data['experience'].pop(i)
+                    st.rerun()
         
         if st.button("➕ Add Job"): 
             st.session_state.user_data['experience'].append({'title':'', 'company':'', 'duration':'', 'description':''})
@@ -258,20 +360,27 @@ def main():
         if c1.button("⬅ Back"): 
             st.session_state.current_step = 1
             st.rerun()
-        if c2.button("Next: Projects & Education ➡"): 
-            st.session_state.current_step = 3
-            st.rerun()
+        if c2.button("Next: Projects & Certifications ➡"):
+            if st.session_state.user_data['skills']: 
+                st.session_state.current_step = 3
+                st.rerun()
+            else:
+                st.error("Please fill in all required fields (marked with *)")
 
     # Step 3: Projects & Education
     elif st.session_state.current_step == 3:
-        st.header("🚀 Projects & Education")
+        st.header("🚀 Projects & Certifications")
         
         st.subheader("Projects")
         for i, proj in enumerate(st.session_state.user_data['projects']):
             with st.expander(f"Project {i+1}", expanded=True):
-                proj['title'] = st.text_input(f"Project Name {i}", proj['title'])
-                proj['tech'] = st.text_input(f"Tech Stack {i}", proj['tech'])
-                proj['description'] = st.text_area(f"Project Desc {i}", proj['description'])
+                proj['title'] = st.text_input(f"Project Name {i+1}", proj['title'])
+                proj['tech'] = st.text_input(f"Tech Stack {i+1}", proj['tech'])
+                proj['description'] = st.text_area(f"Project Desc {i+1}", proj['description'])
+
+            if st.button(f"➖ Remove Project {i+1}", key=f"remove_proj_{i}"):
+                    st.session_state.user_data['projects'].pop(i)
+                    st.rerun()
         
         if st.button("➕ Add Project"):
             st.session_state.user_data['projects'].append({'title': '', 'tech': '', 'description': ''})
@@ -279,28 +388,50 @@ def main():
 
         st.divider()
         
-        st.subheader("Education")
-        for i, edu in enumerate(st.session_state.user_data['education']):
-            with st.expander(f"Education {i+1}", expanded=True):
-                edu['degree'] = st.text_input(f"Degree {i}", edu['degree'])
-                edu['institution'] = st.text_input(f"Institution {i}", edu['institution'])
-                edu['year'] = st.text_input(f"Year {i}", edu['year'])
+        st.subheader("Certifications")
+        for i, cert in enumerate(st.session_state.user_data['certifications']):
+            with st.expander(f"Certificate {i+1}", expanded=True):
+                cert['title'] = st.text_input(f"Certification Title {i+1}", value=cert.get('title', ''), key=f"cert_title_{i}")
+                cert['issuer'] = st.text_input(f"Issuing Organization {i+1}", value=cert.get('issuer', ''), key=f"cert_issuer_{i}")
+                cert['year'] = st.text_input(f"Year Obtained {i+1}", value=cert.get('year', ''), key=f"cert_year_{i}")
 
-        if st.button("➕ Add Education"):
-            st.session_state.user_data['education'].append({'degree': '', 'institution': '', 'year': ''})
+            if st.button(f"➖ Remove Certification {i+1}", key=f"remove_cert_{i}"):
+                    st.session_state.user_data['certifications'].pop(i)
+                    st.rerun()
+
+        if st.button("➕ Add Certification"):
+            st.session_state.user_data['certifications'].append({'title': '', 'issuer': '', 'year': ''})
             st.rerun()
 
         c1, c2 = st.columns([1, 1])
         if c1.button("⬅ Back"): 
             st.session_state.current_step = 2
             st.rerun()
-        if c2.button("Next: Target Job ➡"): 
+        if c2.button("Next: Education and Job Description ➡"): 
             st.session_state.current_step = 4
             st.rerun()
 
-    # Step 4: Job Description
+    # Step 4: Education and Job Description 
+
     elif st.session_state.current_step == 4:
-        st.header("🎯 Target Job Description")
+        st.header("🎯 Education and Job Description")
+        st.subheader("Education")
+        for i, edu in enumerate(st.session_state.user_data['education']):
+            with st.expander(f"Education {i+1}", expanded=True):
+                edu['degree'] = st.text_input(f"Degree {i+1}", edu['degree'])
+                edu['institution'] = st.text_input(f"Institution {i+1}", edu['institution'])
+                edu['year'] = st.text_input(f"Year {i+1}", edu['year'])
+
+            if st.button(f"➖ Remove Education {i+1}", key=f"remove_edu_{i}"):
+                    st.session_state.user_data['education'].pop(i)
+                    st.rerun()
+
+        if st.button("➕ Add Education"):
+            st.session_state.user_data['education'].append({'degree': '', 'institution': '', 'year': ''})
+            st.rerun()
+
+        st.divider()
+
         st.info("Paste the Job Description (JD) below.")
         st.session_state.user_data['job_description'] = st.text_area("Paste JD Here", st.session_state.user_data['job_description'], height=300)
         
@@ -321,15 +452,38 @@ def main():
         with tab1:
             st.subheader("Resume Tailoring")
             if st.button("✨ Auto-Tailor Experience with AI"):
-                with st.spinner(f"Rewriting bullets with {OLLAMA_MODEL}..."):
-                    tailored = tailor_resume_experience(st.session_state.user_data['experience'], st.session_state.user_data['job_description'])
-                    st.session_state.user_data['tailored_experience'] = tailored
+                with st.spinner(f"Rewriting bullets..."):
+
+                    tailored_sum = tailor_resume_summary(st.session_state.user_data['summary'])
+                    st.session_state.user_data['tailored_summary'] = tailored_sum
+                    if st.session_state.user_data.get('tailored_summary'):
+                         st.success("Summary tailoring complete!")
+
+                    tailored_exp = tailor_resume_experience(st.session_state.user_data['experience'], st.session_state.user_data['job_description'])
+                    st.session_state.user_data['tailored_experience'] = tailored_exp
                     if st.session_state.user_data.get('tailored_experience'):
-                         st.success("Tailoring complete!")
+                         st.success("Experience Tailoring complete!")
+
+                    tailored_proj = tailor_resume_projects(st.session_state.user_data['projects'])
+                    st.session_state.user_data['tailored_projects'] = tailored_proj
+                    if st.session_state.user_data.get('tailored_projects'):
+                         st.success("Project tailoring complete!")
+
             
             # Comparison View
             if st.session_state.user_data.get('tailored_experience'):
                 use_tailored = st.checkbox("Use AI-Tailored Content in PDF", value=True)
+                st.subheader("Comparison: Original vs AI-Tailored")
+
+                if st.session_state.user_data.get('tailored_summary'):
+                    with st.expander("Compare: Professional Summary"):
+                        c1, c2 = st.columns(2)
+                        c1.caption("Original")
+                        c1.write(st.session_state.user_data['summary'])
+                        c2.caption("AI Version")
+                        c2.write(st.session_state.user_data['tailored_summary'])
+                st.divider()
+
                 for i, orig in enumerate(st.session_state.user_data['experience']):
                     if i < len(st.session_state.user_data['tailored_experience']):
                         new = st.session_state.user_data['tailored_experience'][i]
@@ -339,6 +493,18 @@ def main():
                             c1.write(orig['description'])
                             c2.caption("AI Version")
                             c2.write(new['description'])
+                st.divider()
+
+                for i, orig in enumerate(st.session_state.user_data['projects']):
+                    if i < len(st.session_state.user_data['tailored_projects']):
+                        new = st.session_state.user_data['tailored_projects'][i]
+                        with st.expander(f"Compare: {orig['title']}"):
+                            c1, c2 = st.columns(2)
+                            c1.caption("Original")
+                            c1.write(orig['description'])
+                            c2.caption("AI Version")
+                            c2.write(new['description'])
+                st.divider()
             else:
                 use_tailored = False
             
