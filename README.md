@@ -1,4 +1,4 @@
-# 🦙 Local AI Resume Builder
+# 🦙 CovRes - AI Resume and Cover Letter Generator
 
 A powerful Streamlit application that uses local LLM models (via Ollama) to help you create professionally tailored resumes and cover letters with AI assistance.
 
