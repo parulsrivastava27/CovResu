@@ -246,6 +246,8 @@ def create_resume_pdf(user_data, use_tailored=False):
                 story.append(Paragraph(exp.get('description', ''), desc_style))
                 story.append(Spacer(1, 10))
 
+        #need to add tailored project and summary
+
         # Skills
         if user_data.get('skills'):
             story.append(Paragraph('Technical Skills', section_header))
