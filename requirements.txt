@@ -1,3 +1,9 @@
 streamlit
 reportlab
 requests
+beautifulsoup4
+lxml
+pandas
+validators
+flask
+python-dotenv
