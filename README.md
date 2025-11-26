@@ -72,7 +72,7 @@ streamlit run app.py
 Edit the Ollama model in [app.py](app.py):
 
 ```python
-OLLAMA_MODEL = "gemma2:9b"  # Change to your desired model
+OLLAMA_MODEL = "llama3.1"  # Change to your desired model
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
 ```
 
@@ -115,11 +115,23 @@ Uses ReportLab to create professionally formatted documents with:
 └── README.md          # This file
 ```
 
+## Key Functions
+
+- `query_ollama()` | Sends prompts to local Ollama API |
+- `tailor_resume_summary()` | AI-rewrites professional summary |
+- `tailor_resume_experience()` | AI-rewrites experience bullet points |
+- `tailor_resume_projects()` | AI-enhances project descriptions |
+- `generate_cover_letter()` | AI generates cover letter |
+- `create_resume_pdf()` | Generates resume PDF with optional tailored content |
+- `create_cover_letter_pdf()` | Generates cover letter PDF |
+
 ## Dependencies
 
 - **streamlit** - Web application framework
 - **reportlab** - PDF generation
 - **requests** - HTTP client for Ollama API
+- **json** - JSON parsing for AI responses
+- **re** - Regex for improved JSON extraction
 
 ## Troubleshooting
 
@@ -167,5 +179,19 @@ Uses ReportLab to create professionally formatted documents with:
 - [ ] Custom styling options
 - [ ] Batch processing for multiple job applications
 - [ ] Resume version history/comparison
+
+## Limitations
+
+- Requires local Ollama installation (no cloud AI)
+- LLM quality depends on chosen model
+- Large job descriptions may take longer to process
+- AI output requires human review before submission
+
+## Privacy
+
+✅ **Your data stays on your machine**
+- No cloud uploads
+- No external AI services (uses local Ollama)
+- All processing happens locally
 
 Made with ❤️ using Streamlit & Ollama

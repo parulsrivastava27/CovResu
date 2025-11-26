@@ -12,7 +12,7 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from datetime import datetime
 import io
 
-OLLAMA_MODEL = "gemma2:9b" 
+OLLAMA_MODEL = "llama3.1" 
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
 
 def query_ollama(prompt):
@@ -38,9 +38,30 @@ def query_ollama(prompt):
 
 # AI GENERATION FUNCTIONS
 
+def clean_text(text):
+    """
+    Removes Markdown and common AI prefixes from Llama 3.1 responses.
+    """
+    text = text.replace('**', '').replace('__', '').strip()
+    
+    # Remove "Here is..." prefixes
+    prefixes = [
+        "Here is the revised", "Here is the rewritten", "Revised:", "Summary:",
+        "Here's the", "Output:", "Response:"
+    ]
+    for prefix in prefixes:
+        if text.lower().startswith(prefix.lower()):
+            text = text.split(":", 1)[-1].strip()
+    
+    # Remove wrapping quotes if the AI added them
+    if text.startswith('"') and text.endswith('"'):
+        text = text[1:-1]
+        
+    return text.strip()
+
 def generate_cover_letter(user_data, job_description):
     prompt = f"""
-    You are a professional resume writer. Write a cover letter.
+    You are a professional resume writer and a career coach.
     
     Candidate Name: {user_data['name']}
     Current Role: {user_data.get('current_role', 'Not specified')}
@@ -48,12 +69,15 @@ def generate_cover_letter(user_data, job_description):
     
     Target Job Description:
     {job_description}
+
+    task : write a professional cover letter for the above job description based on the candidate's details.
     
     Instructions:
     1. Tone: Professional, confident, and enthusiastic.
     2. Structure: Introduction (why I'm applying), Body (matching my skills to the JD), Conclusion (call to action).
     3. Do NOT include placeholders like [Insert Date]. Use today's date.
-    4. Keep it under 500 words.
+    4. Connect Candidate's skills and experience to the job requirements.
+    5. Keep it under 400 words.
     """
     return query_ollama(prompt)
 
@@ -62,21 +86,27 @@ def tailor_resume_summary(summary_text):
     Uses Local LLM to rewrite the professional summary.
     """
     prompt = f"""
-    Act as an Expert Resume Writer.
-    Task: Rewrite the professional summary below to be more impactful and concise.
+    System: You are a professional resume editor. 
+    User: Rewrite the following professional summary to be more impactful, result-oriented, and concise (max 3 sentences).
     
     Original Summary:
-    {summary_text}
+    "{summary_text}"
     
-    RULES:
-    1. Keep it under 3 sentences.
-    2. Focus on achievements and skills.
-    3. Do not add conversational filler like "Here is the summary, or end it with other additional tasks like let me know, etc".
-    4. Just give the exact summary.
+    Output: Provide ONLY the rewritten text. Do not include introductory phrases.
     """
     
-    response_text = query_ollama(prompt)
-    return response_text.strip()
+    # Lower temperature for precision
+    payload = {
+        "model": OLLAMA_MODEL,
+        "prompt": prompt,
+        "stream": False,
+        "options": { "temperature": 0.3 } 
+    }
+    try:
+        response = requests.post(OLLAMA_API_URL, json=payload).json().get("response", "")
+        return clean_text(response)
+    except:
+        return summary_text
     
 
 
@@ -84,86 +114,88 @@ def tailor_resume_experience(experience_list, job_description):
     """
     Uses Local LLM to rewrite experience bullet points.
     """
-    experience_str = json.dumps(experience_list)
+    tailored_list = []
     
-    prompt = f"""
-    Act as an Expert Resume Writer.
-    Task: Rewrite the 'description' field of the work experience JSON below to match the Job Description.
+    # Create a progress bar since we are doing a loop
+    progress_text = "Tailoring experience..."
+    my_bar = st.progress(0, text=progress_text)
+    total_items = len(experience_list)
     
-    Job Description Keywords:
-    {job_description}
-    
-    Original Experience JSON:
-    {experience_str}
-    
-    RULES:
-    1. Output ONLY valid JSON.
-    2. Return a LIST of dictionaries.
-    3. Keep the exact same keys (title, company, duration), only change 'description'.
-    4. Do not add conversational filler like "Here is the JSON".
-    5. Ensure all quotes are escaped correctly.
-    """
-    
-    response_text = query_ollama(prompt)
-    
-    # IMPROVED JSON EXTRACTION
-    try:
+    for index, item in enumerate(experience_list):
+        new_item = item.copy()
+        original_desc = item.get('description', '')
         
-        match = re.search(r'\[.*\]', response_text, re.DOTALL)
-        
-        if match:
-            json_str = match.group(0)
-            return json.loads(json_str)
-        else:
-            clean_text = response_text.replace('```json', '').replace('```', '').strip()
-            return json.loads(clean_text)
+        if original_desc:
+            prompt = f"""
+            System: You are an expert resume editor.
+            Context: The candidate is applying for a job with these requirements: {job_description}
             
-    except json.JSONDecodeError as e:
-        st.error(f"AI Error: The model returned invalid JSON. (Error: {str(e)})")
-        st.warning("Raw Model Output (for debugging):")
-        st.code(response_text)
-        return experience_list
+            Task: Rewrite the following experience bullet point to highlight skills relevant to the job requirements above. Use strong action verbs.
+            
+            Original Text:
+            "{original_desc}"
+            
+            Constraint: Output ONLY the rewritten text. Max 3-4 sentences.
+            """
+            
+            payload = {
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": False,
+                "options": { "temperature": 0.3 } # Low temp is key for Llama 3.1
+            }
+            
+            try:
+                response = requests.post(OLLAMA_API_URL, json=payload).json().get("response", "")
+                new_item['description'] = clean_text(response)
+            except Exception as e:
+                pass # Keep original if error
+        
+        tailored_list.append(new_item)
+        # Update progress bar
+        if total_items > 0:
+            my_bar.progress((index + 1) / total_items, text=f"Tailoring job {index+1} of {total_items}...")
+            
+    my_bar.empty() # Clear bar when done
+    return tailored_list
     
 def tailor_resume_projects(projects_list):
     """
     Uses Local LLM to rewrite project descriptions.
     """
-    projects_str = json.dumps(projects_list)
+    tailored_list = []
     
-    prompt = f"""
-    Act as an Expert Resume Writer.
-    Task: Rewrite the 'description' field of the projects JSON below to be more impactful and concise.
-    
-    Original Projects JSON:
-    {projects_str}
-    
-    RULES:
-    1. Output ONLY valid JSON.
-    2. Return a LIST of dictionaries.
-    3. Keep the exact same keys (title, tech), only change 'description'.
-    4. Do not add conversational filler like "Here is the JSON".
-    5. Ensure all quotes are escaped correctly.
-    """
-    
-    response_text = query_ollama(prompt)
-    
-    # IMPROVED JSON EXTRACTION
-    try:
+    for item in projects_list:
+        new_item = item.copy()
+        original_desc = item.get('description', '')
         
-        match = re.search(r'\[.*\]', response_text, re.DOTALL)
-        
-        if match:
-            json_str = match.group(0)
-            return json.loads(json_str)
-        else:
-            clean_text = response_text.replace('```json', '').replace('```', '').strip()
-            return json.loads(clean_text)
+        if original_desc:
+            prompt = f"""
+            System: You are a technical resume editor.
+            Task: Rewrite the project description below to be concise and highlight the technology used.
             
-    except json.JSONDecodeError as e:
-        st.error(f"AI Error: The model returned invalid JSON. (Error: {str(e)})")
-        st.warning("Raw Model Output (for debugging):")
-        st.code(response_text)
-        return projects_list
+            Original Description:
+            "{original_desc}"
+            
+            Constraint: Output ONLY the rewritten text.
+            """
+            
+            payload = {
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": False,
+                "options": { "temperature": 0.3 }
+            }
+            
+            try:
+                response = requests.post(OLLAMA_API_URL, json=payload).json().get("response", "")
+                new_item['description'] = clean_text(response)
+            except:
+                pass
+                
+        tailored_list.append(new_item)
+        
+    return tailored_list
     
 
 # PDF GENERATION FUNCTIONS
