@@ -222,11 +222,13 @@ def create_resume_pdf(user_data, use_tailored=False):
         story.append(Spacer(1, 20))
 
         # Summary
-        if user_data.get('summary'):
-            story.append(Paragraph('Professional Summary', section_header))
-            story.append(Paragraph(user_data['summary'], desc_style))
-            story.append(Spacer(1, 10))
+        summary_source = user_data.get('tailored_summary') if use_tailored and user_data.get('tailored_summary') else user_data.get('summary', '')
 
+        if summary_source:
+            story.append(Paragraph('Professional Summary', section_header))
+            story.append(Paragraph(summary_source, desc_style))
+            story.append(Spacer(1, 10))
+        
         # Education
         if user_data.get('education'):
             story.append(Paragraph('Education', section_header))
@@ -246,8 +248,6 @@ def create_resume_pdf(user_data, use_tailored=False):
                 story.append(Paragraph(exp.get('description', ''), desc_style))
                 story.append(Spacer(1, 10))
 
-        #need to add tailored project and summary
-
         # Skills
         if user_data.get('skills'):
             story.append(Paragraph('Technical Skills', section_header))
@@ -256,15 +256,26 @@ def create_resume_pdf(user_data, use_tailored=False):
 
 
         # Projects
-        if user_data.get('projects'):
+
+        project_source = user_data.get('tailored_projects') if use_tailored and user_data.get('tailored_projects') else user_data.get('projects', [])
+
+        if project_source and len(project_source) > 0:
             story.append(Paragraph('Projects', section_header))
-            for proj in user_data['projects']:
+            for proj in project_source:
                 story.append(Paragraph(f"<b>{proj.get('title', '')}</b>", role_style))
                 if proj.get('tech'):
                     story.append(Paragraph(f"<i>Tech: {proj['tech']}</i>", desc_style))
                 story.append(Paragraph(proj.get('description', ''), desc_style))
                 story.append(Spacer(1, 8))
 
+        # Certifications
+
+        if user_data.get('certifications'):
+            story.append(Paragraph('Certifications', section_header))
+            for cert in user_data['certifications']:
+                cert_text = f"{cert.get('title', '')} - {cert.get('issuer', '')} ({cert.get('year', '')})"
+                story.append(Paragraph(cert_text, desc_style))
+                story.append(Spacer(1, 5))
         
         doc.build(story)
         buffer.seek(0)
